@@ -1,5 +1,5 @@
 // Firebase web-app identifiers (not administrator credentials).
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: "AIzaSyAU7aqzSAY60L6vO-ckv9rYc_v6trS35PM",
   authDomain: "waste-recovery-management.firebaseapp.com",
   projectId: "waste-recovery-management",
