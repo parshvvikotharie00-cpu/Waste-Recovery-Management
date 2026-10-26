@@ -62,7 +62,39 @@ function downloadCSV(){
 }
 $('csv').onclick=()=>{if(!auth.currentUser){pendingCSV=true;showAuth();return;}downloadCSV();};
 const coords={'Punjab':[31.1,75.4],'Maharashtra':[19.7,75.3],'Uttar Pradesh':[26.8,80.9],'Rajasthan':[26.9,74.2],'Haryana':[29.1,76.1],'Gujarat':[22.3,71.2],'Madhya Pradesh':[23.5,78.7],'Karnataka':[15.3,75.7],'Tamil Nadu':[11.1,78.7],'Andhra Pradesh':[15.9,79.7],'West Bengal':[22.9,87.8],'Bihar':[25.9,85.3],'Odisha':[20.9,84.0],'Telangana':[17.9,79.3],'Kerala':[10.8,76.3],'Assam':[26.2,92.9],'Chhattisgarh':[21.3,81.9],'Jharkhand':[23.6,85.3],'Uttarakhand':[30.1,79.0],'Himachal Pradesh':[31.9,77.1],'Jammu and Kashmir':[33.7,75.0],'Delhi':[28.6,77.2],'Goa':[15.3,74.1],'Tripura':[23.8,91.3],'Meghalaya':[25.5,91.3],'Manipur':[24.7,93.9],'Nagaland':[26.1,94.6],'Sikkim':[27.5,88.5]};
-function renderMap(){if(!dataset||!window.L)return;if(!map){map=L.map('map',{scrollWheelZoom:false}).setView([22.8,79],5);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap contributors'}).addTo(map);markers=L.layerGroup().addTo(map);}markers.clearLayers();const sec=$('mapSector').value,rows=dataset[sec],key=sec==='agriculture'?'surplus_mt':Object.keys(rows[0]).find(k=>k.includes('generated')||k.includes('generation'));const vals=rows.map(r=>Number(r[key])||0).sort((a,b)=>a-b),lo=vals[Math.floor(vals.length/3)]||0,hi=vals[Math.floor(vals.length*2/3)]||0;rows.forEach(r=>{const loc=coords[r.region||r.state];if(!loc)return;const val=Number(r[key])||0,color=val>=hi?'#159e69':val>=lo?'#e2ae37':'#9aadb1';L.circleMarker(loc,{radius:8,weight:2,color:'#fff',fillColor:color,fillOpacity:.9}).bindPopup(`<b>${safe(r.region||r.state)}</b><br>${safe(key)}: ${nice(val)}`).addTo(markers);});setTimeout(()=>map.invalidateSize(),100);}$('mapSector').onchange=renderMap;
+function renderMap(){
+ if(!dataset)return;
+ if(!window.L){console.error('Leaflet did not load; GIS map cannot initialize.');return;}
+ const mapElement=$('map');
+ if(!mapElement)return;
+ if(!map){
+  map=L.map(mapElement,{zoomControl:true,scrollWheelZoom:true,doubleClickZoom:true,dragging:true,touchZoom:true}).setView([22.8,79],5);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+   attribution:'&copy; OpenStreetMap contributors',maxZoom:18
+  }).addTo(map);
+  markers=L.layerGroup().addTo(map);
+ }
+ markers.clearLayers();
+ const sec=$('mapSector').value,rows=dataset[sec]||[];
+ if(!rows.length){map.invalidateSize();return;}
+ // The plastic dataset uses avg_generation_tpa, not generated_tpa.
+ const key=sec==='agriculture'?'surplus_mt':sec==='plastic'?'avg_generation_tpa':'generated_t';
+ const regionRows=rows.filter(r=>coords[r.region||r.state]&&Number.isFinite(Number(r[key])));
+ const vals=regionRows.map(r=>Number(r[key])).sort((a,b)=>a-b);
+ const lo=vals[Math.floor(vals.length/3)]??0,hi=vals[Math.floor(vals.length*2/3)]??0;
+ regionRows.forEach(r=>{
+  const region=r.region||r.state,val=Number(r[key]);
+  const color=val>=hi?'#159e69':val>=lo?'#e2ae37':'#9aadb1';
+  const unit=sec==='agriculture'?'Mt/yr':'TPA';
+  const detail=`<b>${safe(region)}</b><br>${sec==='agriculture'?'Biomass surplus':'Plastic generation'}: ${nice(val)} ${unit}`;
+  L.circleMarker(coords[region],{radius:9,weight:2,color:'#ffffff',fillColor:color,fillOpacity:.9,interactive:true})
+   .bindTooltip(detail,{direction:'top',sticky:true,opacity:.95})
+   .bindPopup(detail)
+   .addTo(markers);
+ });
+ requestAnimationFrame(()=>{map.invalidateSize(true);setTimeout(()=>map.invalidateSize(true),250);});
+}
+$('mapSector').onchange=renderMap;
 function renderCompare(){if(!dataset)return;$('comparison').innerHTML=Object.entries(dataset.stats).map(([sec,stats])=>`<article class="card"><h3>${sectors[sec]}</h3>${Object.entries(stats).filter(([k,v])=>typeof v==='number').slice(0,5).map(([k,v])=>`<p><b>${safe(k.replaceAll('_',' '))}:</b> ${nice(v)}</p>`).join('')}<button class="link" data-compare="${sec}">Explore sector →</button></article>`).join('');document.querySelectorAll('[data-compare]').forEach(b=>b.onclick=()=>{$('sector').value=b.dataset.compare;renderIntelligence();go('intelligence');});}
 function contactRegion(c){return String(c.state||c.region||c.location||c.city||'');}
 function contactSector(c){return String(c.sector||c.waste_type||c.category||c.material||'').toLowerCase();}
