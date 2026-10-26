@@ -62,35 +62,56 @@ function downloadCSV(){
 }
 $('csv').onclick=()=>{if(!auth.currentUser){pendingCSV=true;showAuth();return;}downloadCSV();};
 const coords={'Punjab':[31.1,75.4],'Maharashtra':[19.7,75.3],'Uttar Pradesh':[26.8,80.9],'Rajasthan':[26.9,74.2],'Haryana':[29.1,76.1],'Gujarat':[22.3,71.2],'Madhya Pradesh':[23.5,78.7],'Karnataka':[15.3,75.7],'Tamil Nadu':[11.1,78.7],'Andhra Pradesh':[15.9,79.7],'West Bengal':[22.9,87.8],'Bihar':[25.9,85.3],'Odisha':[20.9,84.0],'Telangana':[17.9,79.3],'Kerala':[10.8,76.3],'Assam':[26.2,92.9],'Chhattisgarh':[21.3,81.9],'Jharkhand':[23.6,85.3],'Uttarakhand':[30.1,79.0],'Himachal Pradesh':[31.9,77.1],'Jammu and Kashmir':[33.7,75.0],'Delhi':[28.6,77.2],'Goa':[15.3,74.1],'Tripura':[23.8,91.3],'Meghalaya':[25.5,91.3],'Manipur':[24.7,93.9],'Nagaland':[26.1,94.6],'Sikkim':[27.5,88.5]};
+function renderRegionAnalysis(sec,region){
+ if(!dataset)return;
+ const box=document.getElementById('regionAnalysis');if(!box)return;
+ const r=(dataset[sec]||[]).find(x=>x.region===region);
+ if(!r){box.textContent='No analytical record is available for this region.';return;}
+ const val=(key,digits=2)=>Number.isFinite(Number(r[key]))?Number(r[key]).toLocaleString('en-IN',{minimumFractionDigits:digits,maximumFractionDigits:digits}):'Not reported';
+ const cells=sec==='agriculture'?
+  [['Biomass generation',val('generation_mt')+' Mt/year'],['Implied utilized',val('utilized_mt')+' Mt/year'],['Surplus / recovery potential',val('surplus_mt')+' Mt/year'],['Surplus share',val('surplus_rate',1)+'%'],['Biomass-to-power potential',val('power_potential_mwe',1)+' MWe']]:
+  [['5-year average generation',val('avg_generation_tpa',0)+' TPA'],['Average processed (comparable data)',val('avg_processed_tpa',0)+' TPA'],['Modelled recovery-gap context',val('recovery_gap_fraction',3)],['Active management pathways',val('active_pathways',1)]];
+ cells.push(['Recovery Opportunity Index (CRROM)',val('opportunity_index')+' / 100'],['Opportunity category',String(r.opportunity||'Not reported')],['K-Means regional profile',r.cluster==null?'Not reported':'Cluster '+r.cluster]);
+ box.innerHTML=`<div class="cri-region-head"><div><small>${sec==='agriculture'?'AGRICULTURAL BIOMASS':'PLASTIC WASTE'}</small><h2>${safe(region)} — Regional Analysis</h2><p>Analytical details from the final model dataset.</p></div><span class="cri-opportunity">${safe(r.opportunity||'Unclassified')} Opportunity</span></div><table class="cri-region-table"><tbody>${cells.map(([k,v])=>`<tr><th>${safe(k)}</th><td>${safe(v)}</td></tr>`).join('')}</tbody></table><p class="muted">CRROM is a prioritization index, not a recovery percentage. The K-Means cluster is a regional analytical profile, not a performance rank.</p>`;
+ box.hidden=false;box.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
 function renderMap(){
  if(!dataset)return;
  if(!window.L){console.error('Leaflet did not load; GIS map cannot initialize.');return;}
- const mapElement=$('map');
- if(!mapElement)return;
+ const mapElement=$('map');if(!mapElement)return;
+ if(!document.getElementById('regionAnalysis')){
+  const box=document.createElement('article');box.id='regionAnalysis';box.className='card';box.hidden=true;
+  mapElement.insertAdjacentElement('afterend',box);
+  const st=document.createElement('style');st.textContent=`#regionAnalysis{margin:18px 0 22px}#regionAnalysis[hidden]{display:none}.cri-region-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}.cri-region-head small{font-weight:700;color:#0b795e;letter-spacing:.1em}.cri-region-head h2{margin:7px 0}.cri-region-head p{color:#64756b}.cri-opportunity{border-radius:16px;background:#f6e6e0;color:#9c3826;padding:8px 13px;font-weight:700}.cri-region-table{width:100%;border-collapse:collapse;margin:14px 0}.cri-region-table th,.cri-region-table td{padding:13px;text-align:left;border-bottom:1px solid #dce8df}.cri-region-table th{width:65%;background:#f5f8f6;color:#4c7165;text-transform:uppercase;font-size:.8rem}.cri-region-table td{background:#fff}`;document.head.appendChild(st);
+ }
  if(!map){
-  map=L.map(mapElement,{zoomControl:true,scrollWheelZoom:true,doubleClickZoom:true,dragging:true,touchZoom:true}).setView([22.8,79],5);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-   attribution:'&copy; OpenStreetMap contributors',maxZoom:18
-  }).addTo(map);
+  map=L.map(mapElement,{zoomControl:true,scrollWheelZoom:false,doubleClickZoom:true,dragging:true,touchZoom:true,boxZoom:true,keyboard:true}).setView([22.8,79],5);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OpenStreetMap contributors',maxZoom:18}).addTo(map);
   markers=L.layerGroup().addTo(map);
+  // Explicit wheel handling: reliable zoom over the map without scrolling the page.
+  mapElement.addEventListener('wheel',e=>{
+   if(!map||!document.querySelector('#gis.page.active'))return;
+   e.preventDefault();e.stopPropagation();
+   const direction=e.deltaY<0?1:-1;
+   const point=map.mouseEventToContainerPoint(e);
+   const zoom=map.getZoom()+direction;
+   if(zoom>=map.getMinZoom()&&zoom<=map.getMaxZoom())map.setZoomAround(point,zoom,{animate:false});
+  },{passive:false});
  }
  markers.clearLayers();
  const sec=$('mapSector').value,rows=dataset[sec]||[];
+ const box=document.getElementById('regionAnalysis');if(box)box.hidden=true;
  if(!rows.length){map.invalidateSize();return;}
- // The plastic dataset uses avg_generation_tpa, not generated_tpa.
- const key=sec==='agriculture'?'surplus_mt':sec==='plastic'?'avg_generation_tpa':'generated_t';
+ const key=sec==='agriculture'?'surplus_mt':'avg_generation_tpa';
  const regionRows=rows.filter(r=>coords[r.region||r.state]&&Number.isFinite(Number(r[key])));
- const vals=regionRows.map(r=>Number(r[key])).sort((a,b)=>a-b);
- const lo=vals[Math.floor(vals.length/3)]??0,hi=vals[Math.floor(vals.length*2/3)]??0;
  regionRows.forEach(r=>{
-  const region=r.region||r.state,val=Number(r[key]);
-  const color=val>=hi?'#159e69':val>=lo?'#e2ae37':'#9aadb1';
+  const region=r.region||r.state;
+  const color=r.opportunity==='High'?'#159e69':r.opportunity==='Medium'?'#e2ae37':r.opportunity==='Low'?'#b66e63':'#9aadb1';
   const unit=sec==='agriculture'?'Mt/yr':'TPA';
-  const detail=`<b>${safe(region)}</b><br>${sec==='agriculture'?'Biomass surplus':'Plastic generation'}: ${nice(val)} ${unit}`;
-  L.circleMarker(coords[region],{radius:9,weight:2,color:'#ffffff',fillColor:color,fillOpacity:.9,interactive:true})
-   .bindTooltip(detail,{direction:'top',sticky:true,opacity:.95})
-   .bindPopup(detail)
-   .addTo(markers);
+  const body=sec==='agriculture'?`Generation: ${nice(r.generation_mt)} Mt/yr<br>Surplus: ${nice(r.surplus_mt)} Mt/yr<br>Surplus rate: ${nice(r.surplus_rate)}%`:`5-year avg generation: ${nice(r.avg_generation_tpa)} TPA<br>Recovery-gap context: ${nice(Number(r.recovery_gap_fraction||0)*100)}%`;
+  const detail=`<b>${safe(region)}</b><br>${body}<br>Recovery Opportunity Index: ${nice(r.opportunity_index)}<br><button type="button" class="cri-analyze-region">Analyze region</button>`;
+  const marker=L.circleMarker(coords[region],{radius:6+Number(r.opportunity_index||0)/15,weight:1,color:'#ffffff',fillColor:color,fillOpacity:.84,interactive:true}).bindTooltip(`<b>${safe(region)}</b><br>${body}`,{direction:'top',sticky:true,opacity:.95}).bindPopup(detail).addTo(markers);
+  marker.on('popupopen',e=>{const btn=e.popup.getElement()?.querySelector('.cri-analyze-region');if(btn)btn.addEventListener('click',()=>renderRegionAnalysis(sec,region));});
  });
  requestAnimationFrame(()=>{map.invalidateSize(true);setTimeout(()=>map.invalidateSize(true),250);});
 }
